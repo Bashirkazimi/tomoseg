@@ -9,7 +9,7 @@ is originally developed to work with tomography data.
 ## Models Supported
 - High Resolution Network (HRNet):
   - [Paper](https://arxiv.org/abs/1902.09212)
-  - [Code]()  
+  - [Code](https://github.com/Bashirkazimi/tomoseg/blob/master/tomoseg/models/hrnet.py)  
 
 ## Requirements
 - Python 3.8.0
@@ -64,6 +64,11 @@ Please cite if you find it useful:
   year={2022}
 }
 ```
+
+## Acknowledgements
+- The majority of the code has been borrowed/adapted from the original 
+  [HRNet](https://github.com/HRNet/HRNet-Semantic-Segmentation) repository.
+  
 
 ## Questions/Suggestions?
 Please feel free to send pool requests or make suggestions. You can 
