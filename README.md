@@ -9,7 +9,11 @@ is originally developed to work with tomography data.
 ## Models Supported
 - High Resolution Network (HRNet):
   - [Paper](https://arxiv.org/abs/1902.09212)
-  - [Code](https://github.com/Bashirkazimi/tomoseg/blob/master/tomoseg/models/hrnet.py)  
+  - [Code](https://github.com/Bashirkazimi/tomoseg/blob/master/tomoseg/models/hrnet.py) 
+  
+- U-Net:
+  - [Paper](https://arxiv.org/abs/1505.04597)
+  - [Code](https://github.com/Bashirkazimi/tomoseg/blob/master/tomoseg/models/unet.py)
 
 ## Requirements
 - Python 3.8.0
