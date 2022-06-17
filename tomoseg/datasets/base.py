@@ -1,9 +1,3 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Microsoft
-# Licensed under the MIT License.
-# Written by Ke Sun (sunk@mail.ustc.edu.cn)
-# ------------------------------------------------------------------------------
-
 import cv2
 import numpy as np
 import random
@@ -82,16 +76,42 @@ class BaseDataset(data.Dataset):
             pad_image = cv2.copyMakeBorder(image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=padvalue)
         return pad_image
 
-    def rand_crop(self, image, label):
+    def rand_crop(self, image, label=None):
         h, w = image.shape[:2]
         image = self.pad_image(image, h, w, self.crop_size, tuple(float(np.min(image)) for _ in range(self.num_input_channels)))
-        label = self.pad_image(label, h, w, self.crop_size, (self.ignore_label,))
-        new_h, new_w = label.shape
+        if label is not None:
+            label = self.pad_image(label, h, w, self.crop_size, (self.ignore_label,))
+        new_h, new_w = image.shape
         x = random.randint(0, new_w - self.crop_size[1])
         y = random.randint(0, new_h - self.crop_size[0])
         image = image[y:y+self.crop_size[0], x:x+self.crop_size[1]]
-        label = label[y:y+self.crop_size[0], x:x+self.crop_size[1]]
-        return image, label
+        if label is not None:
+            label = label[y:y+self.crop_size[0], x:x+self.crop_size[1]]
+            return image, label
+        return image
+
+    def center_crop(self, image, label=None):
+        h, w = image.shape[:2]
+        image = self.pad_image(image, h, w, self.crop_size, tuple(float(np.min(image)) for _ in range(self.num_input_channels)))
+        if label is not None:
+            label = self.pad_image(label, h, w, self.crop_size, (self.ignore_label,))
+
+        new_h, new_w = image.shape[:2]
+        center_h, center_w = new_h // 2, new_w // 2
+
+        image = image[
+            center_h - (self.crop_size[0] // 2):center_h + (self.crop_size[0] // 2),
+            center_w - (self.crop_size[1] // 2):center_w + (self.crop_size[1] // 2)
+        ]
+
+        if label is not None:
+            label = label[
+                    center_h - (self.crop_size[0] // 2):center_h + (self.crop_size[0] // 2),
+                    center_w - (self.crop_size[1] // 2):center_w + (self.crop_size[1] // 2)
+                ]
+            return image, label
+
+        return image
 
     def multi_scale_aug(self, image, label=None, rand_scale=1):
         long_size = np.int(self.base_size * rand_scale + 0.5)
@@ -168,7 +188,7 @@ class BaseDataset(data.Dataset):
         image = self.input_transform(image)
         label = self.label_transform(label)
 
-        image, label = self.rand_crop(image, label)
+        image, label = self.center_crop(image, label)
 
         if image.ndim == 2:
             image = np.expand_dims(image, 0)

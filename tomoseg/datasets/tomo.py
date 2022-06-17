@@ -1,9 +1,3 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Microsoft
-# Licensed under the MIT License.
-# Written by Ke Sun (sunk@mail.ustc.edu.cn)
-# ------------------------------------------------------------------------------
-
 import os
 
 import cv2
@@ -58,7 +52,7 @@ class TomoDataset(BaseDataset):
                     'label': label_path,
                     'name': name,
                 })
-        return files[:500]
+        return files
 
     def resize_image(self, image, label, size):
         image = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
@@ -73,9 +67,10 @@ class TomoDataset(BaseDataset):
         size = image.shape
 
         if self.split == 'unlabeled':
+            short_length = min(size[:2])
             image = self.resize_short_length(
                 image,
-                short_length=self.base_size,
+                short_length=short_length,
                 fit_stride=8
             )
             image = self.input_transform(image)
@@ -97,9 +92,10 @@ class TomoDataset(BaseDataset):
             image, label = self.generate_validation_sample(image, label)
             return image.copy(), label.copy(), np.array(size), name
         elif self.split == 'test':
+            short_length = min(size[:2])
             image = self.resize_short_length(
                 image,
-                short_length=self.base_size,
+                short_length=short_length,
                 fit_stride=8
             )
             image = self.input_transform(image)

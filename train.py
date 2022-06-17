@@ -1,9 +1,3 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Microsoft
-# Licensed under the MIT License.
-# Written by Ke Sun (sunk@mail.ustc.edu.cn)
-# ------------------------------------------------------------------------------
-
 import argparse
 import math
 import os
@@ -260,35 +254,36 @@ def main():
             current_time
         )
 
-        for metric in scores.keys():
-            if best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] < scores[metric][0]:
-                best_scores[metric]['value'] = scores[metric][0]
-                file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
-                utils.save_on_master(model_without_ddp.state_dict(), file_path)
-            if not best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] > scores[metric][0]:
-                best_scores[metric]['value'] = scores[metric][0]
-                file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
-                utils.save_on_master(model_without_ddp.state_dict(), file_path)
-            current_metric_message = 'Current {}: {}, Best {}: {}, Per Class {}:{} '.format(
-                metric,
-                scores[metric][0],
-                metric,
-                best_scores[metric]['value'],
-                metric,
-                scores[metric][1:]
-            )
-            message = message + current_metric_message
-        log_info(message)
-        checkpoint = {
-            'model': model_without_ddp.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'lr_scheduler': lr_scheduler.state_dict(),
-            'epoch': epoch,
-            'scores': {metric: score[0] for metric, score in scores.items()}
-        }
-        if args.amp:
-            checkpoint['scaler'] = scaler.state_dict()
-        utils.save_on_master(checkpoint, os.path.join(final_output_dir, 'checkpoint.pth.tar'))
+        if utils.is_main_process():
+            for metric in scores.keys():
+                if best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] < scores[metric][0]:
+                    best_scores[metric]['value'] = scores[metric][0]
+                    file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
+                    utils.save_on_master(model_without_ddp.state_dict(), file_path)
+                if not best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] > scores[metric][0]:
+                    best_scores[metric]['value'] = scores[metric][0]
+                    file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
+                    utils.save_on_master(model_without_ddp.state_dict(), file_path)
+                current_metric_message = 'Current {}: {}, Best {}: {}, Per Class {}:{} '.format(
+                    metric,
+                    scores[metric][0],
+                    metric,
+                    best_scores[metric]['value'],
+                    metric,
+                    scores[metric][1:]
+                )
+                message = message + current_metric_message
+            log_info(message)
+            checkpoint = {
+                'model': model_without_ddp.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'lr_scheduler': lr_scheduler.state_dict(),
+                'epoch': epoch,
+                'scores': {metric: score[0] for metric, score in scores.items()}
+            }
+            if args.amp:
+                checkpoint['scaler'] = scaler.state_dict()
+            utils.save_on_master(checkpoint, os.path.join(final_output_dir, 'checkpoint.pth.tar'))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
