@@ -12,7 +12,7 @@ from tensorboardX import SummaryWriter
 
 from tomoseg import models, datasets
 from tomoseg.config import update_config, config
-from tomoseg.utils.utils import create_logger, get_model_summary, init_distributed_mode, log_info
+from tomoseg.utils.utils import create_logger, get_model_summary, log_info
 from torch.utils.data.distributed import DistributedSampler
 from tomoseg.core.losses import OhemCrossEntropy, CrossEntropy
 from tomoseg.core import function
@@ -29,8 +29,6 @@ def parse_args():
                         required=True,
                         type=str)
     parser.add_argument('--seed', type=int, default=304)
-    parser.add_argument("--device", default="cuda", type=str, help="device (Use cuda or cpu Default: cuda)")
-    parser.add_argument("--amp", action="store_true", help="Use torch.cuda.amp for mixed precision training")
     parser.add_argument('opts',
                         help="Modify config options using the command-line",
                         default=None,
@@ -65,22 +63,21 @@ def main():
     cudnn.deterministic = config.CUDNN.DETERMINISTIC
     cudnn.enabled = config.CUDNN.ENABLED
     gpus = list(config.GPUS)
-    device = torch.device(args.device)
 
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in gpus)
-    distributed = init_distributed_mode()
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        local_rank = int(os.environ["LOCAL_RANK"])
+        distributed = True
+    else:
+        distributed = False
+        local_rank = 0
 
-    model = eval('models.' + config.MODEL.NAME)(
-        input_nc=config.DATASET.NUM_INPUT_CHANNELS,
-        output_nc=config.DATASET.NUM_CLASSES,
-        pretrained=config.MODEL.PRETRAINED,
-        init_fn=config.TRAIN.INIT_FN
-    )
-
-    dump_input = torch.rand(
-        (1, config.DATASET.NUM_INPUT_CHANNELS, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
-    )
-    log_info(get_model_summary(model.cuda(), dump_input.cuda()))
+    device = torch.device('cuda:{}'.format(local_rank))
+    if distributed:
+        torch.cuda.set_device(device)
+        torch.distributed.init_process_group(
+            backend="nccl", init_method="env://",
+        )
 
     if distributed:
         batch_size = config.TRAIN.BATCH_SIZE_PER_GPU
@@ -113,7 +110,7 @@ def main():
 
     log_info(f'{len(train_dataset)} training examples in {len(trainloader)} batches')
 
-    val_size = (config.TEST.IMAGE_SIZE[1], config.TEST.IMAGE_SIZE[0])
+    val_size = (config.TEST.BASE_SIZE, config.TEST.BASE_SIZE)
     val_dataset = eval('datasets.' + config.DATASET.DATASET)(
         split='val',
         list_path=config.DATASET.VAL_SET,
@@ -146,14 +143,27 @@ def main():
         criterion = CrossEntropy(ignore_label=config.TRAIN.IGNORE_LABEL,
                                  weight=train_dataset.class_weights)
 
-    model.to(device)
-    if distributed:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    model = eval('models.' + config.MODEL.NAME)(
+        input_nc=config.DATASET.NUM_INPUT_CHANNELS,
+        output_nc=config.DATASET.NUM_CLASSES,
+        pretrained=config.MODEL.PRETRAINED,
+        init_fn=config.TRAIN.INIT_FN
+    )
 
-    model_without_ddp = model
+    dump_input = torch.rand(
+        (1, config.DATASET.NUM_INPUT_CHANNELS, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
+    )
+    log_info(get_model_summary(model.cuda(), dump_input.cuda()))
+
+    model = utils.FullModel(model, criterion)
     if distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[int(os.environ["LOCAL_RANK"])])
-        model_without_ddp = model.module
+        model = model.to(device)
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[local_rank],
+            output_device=local_rank
+        )
     else:
         model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
@@ -181,8 +191,6 @@ def main():
                                     )
     else:
         raise ValueError(f'Only support SGD, Adam, and RMSprop, not {config.TRAIN.OPTIMIZER}')
-
-    scaler = torch.cuda.amp.GradScaler() if args.amp else None
 
     iters_per_epoch = len(trainloader)
     main_lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -222,7 +230,7 @@ def main():
             for metric in best_scores.keys():
                 best_scores[metric]['value'] = checkpoint['scores'][metric]
             last_epoch = checkpoint['epoch']
-            model_without_ddp.load_state_dict(checkpoint['model'])
+            model.module.model.load_state_dict(checkpoint['model'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
             log_info("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
@@ -233,19 +241,25 @@ def main():
     for epoch in range(last_epoch, config.TRAIN.EPOCHS):
         if distributed:
             train_sampler.set_epoch(epoch)
-        train_loss = function.train_one_epoch(model, criterion, optimizer, trainloader, lr_scheduler, device, epoch,
-                                              config, writer_dict, scaler)
+
+        train_loss = function.train_one_epoch(model, optimizer, trainloader, lr_scheduler, device, epoch,
+                                              config, writer_dict)
+
         current_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
+
         message = 'Epoch: {}/{} Train Loss: {:.6f} Current Time: {}'.format(
             epoch,
             config.TRAIN.EPOCHS,
             train_loss,
             current_time
         )
+
         log_info(message)
+
         log_info('Validating ...')
-        valid_loss, scores = function.validate(model, criterion, valloader, device, config, config.METRIC.METRICS,
-                                               writer_dict)
+
+        valid_loss, scores = function.validate(model, valloader, device, config, config.METRIC.METRICS, writer_dict)
+
         current_time = str(datetime.timedelta(seconds=int(time.time() - start_time)))
         message = 'Epoch: {}/{} Valid Loss: {:.6f} Current Time: {} '.format(
             epoch,
@@ -254,16 +268,18 @@ def main():
             current_time
         )
 
-        if utils.is_main_process():
+        if local_rank <= 0:
             for metric in scores.keys():
                 if best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] < scores[metric][0]:
                     best_scores[metric]['value'] = scores[metric][0]
                     file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
-                    utils.save_on_master(model_without_ddp.state_dict(), file_path)
+                    torch.save(model.module.model.state_dict(), file_path)
+
                 if not best_scores[metric]['higher_is_better'] and best_scores[metric]['value'] > scores[metric][0]:
                     best_scores[metric]['value'] = scores[metric][0]
                     file_path = os.path.join(final_output_dir, 'best_{}.pth'.format(metric))
-                    utils.save_on_master(model_without_ddp.state_dict(), file_path)
+                    torch.save(model.module.model.state_dict(), file_path)
+
                 current_metric_message = 'Current {}: {}, Best {}: {}, Per Class {}:{} '.format(
                     metric,
                     scores[metric][0],
@@ -272,18 +288,20 @@ def main():
                     metric,
                     scores[metric][1:]
                 )
+
                 message = message + current_metric_message
+
             log_info(message)
+
             checkpoint = {
-                'model': model_without_ddp.state_dict(),
+                'model': model.module.model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'scores': {metric: score[0] for metric, score in scores.items()}
             }
-            if args.amp:
-                checkpoint['scaler'] = scaler.state_dict()
-            utils.save_on_master(checkpoint, os.path.join(final_output_dir, 'checkpoint.pth.tar'))
+
+            torch.save(checkpoint, os.path.join(final_output_dir, 'checkpoint.pth.tar'))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
