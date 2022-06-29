@@ -108,6 +108,11 @@ _C.TEST.MULTI_SCALE = False
 _C.TEST.SCALE_LIST = [1]
 _C.TEST.SV_DIR = None
 
+_C.TEST.SAMPLE_IMAGES_PATH = None
+_C.TEST.SAMPLE_LABELS_PATH = None
+_C.TEST.SAMPLE_PREPROCESS = True
+_C.TEST.SAMPLE_EXT = '.tif'
+
 
 
 def update_config(cfg, args):

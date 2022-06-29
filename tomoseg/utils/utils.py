@@ -3,91 +3,61 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import logging
 import time
 from pathlib import Path
+import logging
 
 import numpy as np
 
 from collections import namedtuple
 
-import torch
 import torch.nn as nn
 
-import torch.distributed as dist
+
+import torch
+import torch.distributed as torch_dist
+
+logger = logging.getLogger(__name__)
 
 
-def setup_for_distributed(is_master):
-    """
-    This function disables printing when not in master process
-    """
-    import builtins as __builtin__
 
-    builtin_print = __builtin__.print
-
-    def print(*args, **kwargs):
-        force = kwargs.pop("force", False)
-        if is_master or force:
-            builtin_print(*args, **kwargs)
-
-    __builtin__.print = print
-
-
-def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
+def is_distributed():
+    return torch_dist.is_initialized()
 
 
 def get_world_size():
-    if not is_dist_avail_and_initialized():
+    if not torch_dist.is_initialized():
         return 1
-    return dist.get_world_size()
+    return torch_dist.get_world_size()
 
 
 def get_rank():
-    if not is_dist_avail_and_initialized():
+    if not torch_dist.is_initialized():
         return 0
-    return dist.get_rank()
-
-
-def is_main_process():
-    return get_rank() == 0
-
-
-def save_on_master(*args, **kwargs):
-    if is_main_process():
-        torch.save(*args, **kwargs)
+    return torch_dist.get_rank()
 
 
 def log_info(message):
-    if is_main_process():
-        logging.info(message)
+    if get_rank() == 0:
+        logger.info(message)
 
 
-def init_distributed_mode():
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        gpu = int(os.environ["LOCAL_RANK"])
-    else:
-        log_info("Not using distributed mode")
-        distributed = False
-        return distributed
+class FullModel(nn.Module):
+  """
+  Distribute the loss on multi-gpu to reduce
+  the memory cost in the main gpu.
+  You can check the following discussion.
+  https://discuss.pytorch.org/t/dataparallel-imbalanced-memory-usage/22551/21
+  """
+  def __init__(self, model, loss):
+    super(FullModel, self).__init__()
+    self.model = model
+    self.loss = loss
 
-    distributed = True
-
-    torch.cuda.set_device(gpu)
-    dist_backend = "nccl"
-    dist_url = "env://"
-    print(f"| distributed init (rank {rank}): {dist_url}", flush=True)
-    torch.distributed.init_process_group(
-        backend=dist_backend, init_method=dist_url, world_size=world_size, rank=rank
-    )
-    setup_for_distributed(rank == 0)
-    return distributed
+  def forward(self, inputs, labels, *args, **kwargs):
+    outputs = self.model(inputs, *args, **kwargs)
+    loss = self.loss(outputs, labels)
+    return torch.unsqueeze(loss,0), outputs
 
 
 def get_model_summary(model, *input_tensors, item_length=26, verbose=False):

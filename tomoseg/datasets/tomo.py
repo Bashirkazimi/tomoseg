@@ -52,7 +52,7 @@ class TomoDataset(BaseDataset):
                     'label': label_path,
                     'name': name,
                 })
-        return files
+        return files#[:50]
 
     def resize_image(self, image, label, size):
         image = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)

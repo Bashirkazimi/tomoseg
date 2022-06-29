@@ -24,8 +24,6 @@ def parse_args():
                         required=True,
                         type=str)
     parser.add_argument('--seed', type=int, default=304)
-    parser.add_argument("--device", default="cuda", type=str, help="device (Use cuda or cpu Default: cuda)")
-    parser.add_argument("--amp", action="store_true", help="Use torch.cuda.amp for mixed precision training")
     parser.add_argument('opts',
                         help="Modify config options using the command-line",
                         default=None,
@@ -54,7 +52,6 @@ def main():
     cudnn.deterministic = config.CUDNN.DETERMINISTIC
     cudnn.enabled = config.CUDNN.ENABLED
     gpus = list(config.GPUS)
-    device = torch.device(args.device)
 
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in gpus)
 
@@ -83,7 +80,7 @@ def main():
         log_info('Loading {} from pretrained model in: {}'.format(k, model_file))
 
     model.load_state_dict(state_dict)
-    model = torch.nn.DataParallel(model, device_ids=gpus).to(device)
+    model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
     # prepare data
 

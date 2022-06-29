@@ -31,7 +31,7 @@ TRAIN:
   IGNORE_LABEL: -1
   IMAGE_SIZE: [1000, 1000]
   INIT_FN: xavier_normal_
-  LR: 0.1
+  LR: 0.01
   LR_FACTOR: 0.1
   LR_STEP: [90, 110]
   MOMENTUM: 0.9

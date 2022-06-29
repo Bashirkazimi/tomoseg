@@ -21,6 +21,8 @@ is originally developed to work with tomography data.
 
 ## Setup
 - Clone the repository: `git clone https://github.com/bashirkazimi/tomoseg.git`
+- Create a virtual environment: `python3 -m venv /ENVIRONMENT/LOCATION/NAME`
+- Activate the virtual environment: `source /ENVIRONMENT/LOCATION/NAME/bin/activate`  
 - Go to directory and install required libraries:
   - `cd tomoseg`
   - `pip install -r requirements.txt`

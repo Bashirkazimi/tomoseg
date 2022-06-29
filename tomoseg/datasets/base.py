@@ -216,7 +216,7 @@ class BaseDataset(data.Dataset):
                 else:
                     new_img = new_img.transpose((2, 0, 1))
                 new_img = np.expand_dims(new_img, axis=0)
-                new_img = torch.from_numpy(new_img)
+                new_img = torch.from_numpy(new_img).cuda()
                 preds = model(new_img)
                 preds = preds[:, :, 0:height, 0:width]
             else:
@@ -242,7 +242,7 @@ class BaseDataset(data.Dataset):
                         else:
                             crop_img = crop_img.transpose((2, 0, 1))
                         crop_img = np.expand_dims(crop_img, axis=0)
-                        crop_img = torch.from_numpy(crop_img)
+                        crop_img = torch.from_numpy(crop_img).cuda()
                         pred = model(crop_img)
                         preds[:, :, h0:h1, w0:w1] += pred[:, :, 0:h1-h0, 0:w1-w0]
                         count[:, :, h0:h1, w0:w1] += 1
